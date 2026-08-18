@@ -8,8 +8,11 @@ import notificationRoutes from "./routes/notification.routes.js";
 const app = express();
 
 app.use(
-  cors({
-    origin: "http://localhost:5174",
+   cors({
+    origin: [
+      "http://localhost:5174",
+      "https://price-pulse-silk.vercel.app",
+    ],
     credentials: true,
   })
 );
