@@ -41,6 +41,8 @@ export async function checkTargetPrice(
       },
     });
 
+    // One alert per target-price cycle. Resetting the alert clears
+    // lastTriggeredAt and allows a future price check to trigger again.
     if (existingAlert?.lastTriggeredAt) {
       continue;
     }
@@ -60,30 +62,63 @@ export async function checkTargetPrice(
       },
     });
 
-    await prisma.notification.create({
+    const notification = await prisma.notification.create({
       data: {
         alertId: alert.id,
         status: "PENDING",
       },
     });
 
-    await resend.emails.send({
-      from: "PricePulse <onboarding@resend.dev>",
-      to: tracking.user.email,
-      subject: `Price Alert: ${listing.product.title}`,
-      html: `
-        <h2>Price dropped! 🎉</h2>
-        <p><b>${listing.product.title}</b></p>
-        <p>${listing.marketplace.name}: ₹${currentPrice}</p>
-        <p>Your target: ₹${targetPrice}</p>
-        <a href="${listing.url}">View Product</a>
-      `,
-    });
+    let emailDelivered = false;
+    let pushDelivered = false;
 
-    await sendPushNotification(
-  tracking.user.id,
-  `Price Alert: ${listing.product.title}`,
-  `${listing.marketplace.name} price is now ₹${currentPrice}. Target: ₹${targetPrice}`
-);
+    // Email should not prevent push notification delivery if Resend fails.
+    try {
+      const result = await resend.emails.send({
+        from: "PricePulse <onboarding@resend.dev>",
+        to: tracking.user.email,
+        subject: `Price Alert: ${listing.product.title}`,
+        html: `
+          <h2>Price dropped! 🎉</h2>
+          <p><b>${listing.product.title}</b></p>
+          <p>${listing.marketplace.name}: ₹${currentPrice}</p>
+          <p>Your target: ₹${targetPrice}</p>
+          <a href="${listing.url}">View Product</a>
+        `,
+      });
+
+      emailDelivered = !result.error;
+
+      if (result.error) {
+        console.error("Email notification failed:", result.error);
+      }
+    } catch (error) {
+      console.error("Email notification failed:", error);
+    }
+
+console.log("PUSH: Calling sendPushNotification...");
+
+try {
+  pushDelivered = await sendPushNotification(
+    tracking.user.id,
+    `Price Alert: ${listing.product.title}`,
+    `${listing.marketplace.name} price is now ₹${currentPrice}. Target: ₹${targetPrice}`
+  );
+
+  console.log("PUSH: Result =", pushDelivered);
+} catch (error) {
+  console.error("PUSH: Failed =", error);
+}
+
+    await prisma.notification.update({
+      where: {
+        id: notification.id,
+      },
+      data: {
+        status: emailDelivered || pushDelivered ? "SENT" : "FAILED",
+        sentAt:
+          emailDelivered || pushDelivered ? new Date() : null,
+      },
+    });
   }
 }

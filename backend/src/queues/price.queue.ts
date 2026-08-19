@@ -7,14 +7,8 @@ export const priceQueue = new Queue("price-check", {
   },
 });
 
-export async function addPriceCheckJob(
-  productId: string,
-  price: number,
-  currency: string
-) {
+export async function addPriceCheckJob(listingId: string) {
   await priceQueue.add("price-check", {
-    productId,
-    price,
-    currency,
+    listingId,
   });
 }

@@ -1,32 +1,41 @@
-# React + TypeScript + Vite
+# PricePulse
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+PricePulse is a full-stack price tracking application that monitors product prices and alerts users when a tracked product reaches their target price.
 
-Currently, two official plugins are available:
+## Core Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Email/password authentication with JWT cookies
+- Google OAuth authentication
+- User-specific product tracking
+- Amazon product price tracking
+- Target-price alerts
+- Email notifications via Resend
+- Web Push notification infrastructure
+- Price history tracking
+- PostgreSQL + Prisma ORM
+- Multi-marketplace data model
+- Vercel frontend + Render backend deployment
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+**Frontend:** React, TypeScript, Vite, Tailwind CSS
 
-## Expanding the Oxlint configuration
+**Backend:** Node.js, Express, TypeScript, Prisma
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+**Database:** PostgreSQL
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+**Auth:** JWT, HTTP-only cookies, Google OAuth
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+**Notifications:** Resend, Web Push
+
+## Architecture
+
+React frontend → Express API → Prisma → PostgreSQL
+
+Background price checks update listing prices and trigger alerts when the current price crosses the user's target price.
+
+## Production
+
+Frontend: https://price-pulse-silk.vercel.app
+
+Backend: https://pricepulse-4h64.onrender.com

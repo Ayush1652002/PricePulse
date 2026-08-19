@@ -1,9 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL;
 
-async function request(
-  url: string,
-  options: RequestInit = {}
-) {
+async function request(url: string, options: RequestInit = {}) {
   const response = await fetch(`${API_URL}${url}`, {
     ...options,
     credentials: "include",
@@ -22,51 +19,47 @@ async function request(
   return data;
 }
 
-export async function login(
-  email: string,
-  password: string
-) {
+export async function login(email: string, password: string) {
   return request("/auth/login", {
     method: "POST",
-    body: JSON.stringify({
-      email,
-      password,
-    }),
+    body: JSON.stringify({ email, password }),
   });
 }
 
-export async function googleLogin(
-  credential: string
-) {
+export async function googleLogin(credential: string) {
   return request("/auth/google", {
     method: "POST",
-    body: JSON.stringify({
-      credential,
-    }),
+    body: JSON.stringify({ credential }),
   });
 }
 
-export async function register(
-  email: string,
-  password: string
-) {
+export async function register(email: string, password: string) {
   return request("/auth/register", {
     method: "POST",
-    body: JSON.stringify({
-      email,
-      password,
-    }),
+    body: JSON.stringify({ email, password }),
   });
 }
 
 export async function logout() {
-  return request("/auth/logout", {
-    method: "POST",
-  });
+  return request("/auth/logout", { method: "POST" });
+}
+
+export async function getProfile() {
+  return request("/auth/profile");
 }
 
 export async function getProducts() {
   return request("/products");
+}
+
+export async function previewProduct(url: string, marketplace?: string) {
+  return request("/products/preview", {
+    method: "POST",
+    body: JSON.stringify({
+      url,
+      marketplace: marketplace || undefined,
+    }),
+  });
 }
 
 export async function createProduct(data: {
@@ -84,4 +77,58 @@ export async function createProduct(data: {
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+export async function subscribeToNotifications(
+  subscription: PushSubscriptionJSON
+) {
+  return request("/notifications/subscribe", {
+    method: "POST",
+    body: JSON.stringify(subscription),
+  });
+}
+
+export async function updateProduct(
+  id: string,
+  data: {
+    title?: string;
+    targetPrice?: number;
+    status?: "ACTIVE" | "PAUSED" | "STOPPED";
+  }
+) {
+  return request(`/products/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProduct(id: string) {
+  return request(`/products/${id}`, { method: "DELETE" });
+}
+
+export async function updateProductPrice(
+  id: string,
+  price: number,
+  currency: string
+) {
+  return request(`/products/${id}/price`, {
+    method: "PATCH",
+    body: JSON.stringify({ price, currency }),
+  });
+}
+
+export async function getPriceHistory(id: string) {
+  return request(`/products/${id}/price-history`);
+}
+
+export async function checkProductPrice(id: string) {
+  return request(`/products/${id}/check`, { method: "POST" });
+}
+
+export async function resetAlert(id: string) {
+  return request(`/products/${id}/reset-alert`, { method: "POST" });
+}
+
+export async function getNotifications() {
+  return request("/notifications");
 }

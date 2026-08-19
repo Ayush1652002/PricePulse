@@ -4,13 +4,15 @@ import { checkListingPrice } from "../services/price.service.js";
 const worker = new Worker(
   "price-check",
   async (job) => {
-    return await checkListingPrice(
-      job.data.listingId
-    );
+    if (!job.data.listingId) {
+      throw new Error("listingId missing from price-check job.");
+    }
+
+    return await checkListingPrice(job.data.listingId);
   },
   {
     connection: {
-      host: "localhost",
+      host: "127.0.0.1",
       port: 6379,
     },
   }

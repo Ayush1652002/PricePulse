@@ -51,3 +51,42 @@ export async function subscribeToPush(req: Request, res: Response) {
     });
   }
 }
+
+export async function getNotifications(req: Request, res: Response) {
+  try {
+    const userId = (req as any).user.userId;
+
+    const notifications = await prisma.notification.findMany({
+      where: {
+        alert: {
+          trackedProduct: {
+            userId,
+          },
+        },
+      },
+      include: {
+        alert: {
+          include: {
+            trackedProduct: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 20,
+    });
+
+    return res.status(200).json({ notifications });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to load notifications.",
+    });
+  }
+}

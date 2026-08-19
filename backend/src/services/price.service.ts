@@ -12,9 +12,7 @@ export async function checkListingPrice(listingId: string) {
   }
 
   const price = await fetchProductPrice(listing.url);
-
   const previousPrice = Number(listing.currentPrice);
-
   const lowestObservedPrice = Math.min(
     Number(listing.lowestObservedPrice),
     price
@@ -27,6 +25,14 @@ export async function checkListingPrice(listingId: string) {
       currentPrice: price,
       lowestObservedPrice,
       lastCheckedAt: new Date(),
+    },
+  });
+
+  await prisma.priceHistory.create({
+    data: {
+      listingId,
+      price,
+      currency: listing.currency,
     },
   });
 

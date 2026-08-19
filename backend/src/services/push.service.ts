@@ -12,10 +12,11 @@ export async function sendPushNotification(
   title: string,
   body: string
 ) {
-  const subscriptions =
-    await prisma.pushSubscription.findMany({
-      where: { userId },
-    });
+  const subscriptions = await prisma.pushSubscription.findMany({
+    where: { userId },
+  });
+
+  let delivered = 0;
 
   for (const subscription of subscriptions) {
     try {
@@ -27,16 +28,31 @@ export async function sendPushNotification(
             auth: subscription.auth,
           },
         },
-        JSON.stringify({
-          title,
-          body,
-        })
+        JSON.stringify({ title, body })
       );
-    } catch (error: any) {
-      console.error(
-        "Push notification failed:",
-        error.message
-      );
+
+      delivered += 1;
+       } catch (error: any) {
+      const statusCode = error?.statusCode;
+      const responseBody = error?.body;
+
+      console.error("PUSH ERROR:", {
+        statusCode,
+        message: error?.message,
+        body: responseBody,
+      });
+
+      if (statusCode === 404 || statusCode === 410) {
+        await prisma.pushSubscription.deleteMany({
+          where: { endpoint: subscription.endpoint },
+        });
+
+        console.warn(
+          `Removed expired push subscription for user ${userId}.`
+        );
+      }
     }
   }
+
+  return delivered > 0;
 }

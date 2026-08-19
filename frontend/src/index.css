@@ -32,3 +32,17 @@ body::-webkit-scrollbar-thumb {
   background: #2c3341;
   border-radius: 20px;
 }
+.google-login-wrap {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  justify-content: center;
+}
+
+.google-login-wrap > div {
+  width: 100% !important;
+}
+
+.google-login-wrap iframe {
+  width: 100% !important;
+}

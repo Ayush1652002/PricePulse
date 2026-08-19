@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Feed from "./pages/Feed";
 import AddProduct from "./pages/AddProduct";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
   return (
@@ -10,8 +11,10 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/feed" element={<Feed />} />
-        <Route path="/add-product" element={<AddProduct />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/feed" element={<Feed />} />
+          <Route path="/add-product" element={<AddProduct />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );
