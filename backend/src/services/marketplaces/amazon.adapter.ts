@@ -4,8 +4,10 @@ import {
   cleanAmazonUrl,
   fetchHtml,
   getExternalId,
+  isAmazonShortUrl,
   parsePrice,
   parseTitle,
+  resolveShortUrl,
 } from "./helpers.js";
 
 export class AmazonAdapter implements MarketplaceAdapter {
@@ -16,6 +18,7 @@ export class AmazonAdapter implements MarketplaceAdapter {
   }
 
   async getProduct(url: string): Promise<ProductData> {
+    const resolvedUrl = isAmazonShortUrl(url) ? await resolveShortUrl(url) : url;
     const cleanUrl = cleanAmazonUrl(url);
     const $ = cheerio.load(await fetchHtml(cleanUrl));
 

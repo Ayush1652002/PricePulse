@@ -26,6 +26,27 @@ export function cleanAmazonUrl(url: string) {
   return match ? `${parsed.origin}/dp/${match[1]}` : url;
 }
 
+export function isAmazonShortUrl(url: string): boolean {
+  return /^https?:\/\/(www\.)?amzn\.(in|to|com|eu)\/d\//i.test(url);
+}
+// Follows HTTP redirects to resolve amzn.in/d/... short URLs to their
+// full amazon.in/dp/ASIN destination. Falls back to original URL on error.
+export async function resolveShortUrl(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+    return response.url || url;
+  } catch {
+    return url;
+  }
+}
+
 export function parsePrice($: cheerio.CheerioAPI) {
   const selectors = [
     '[itemprop="price"]',
