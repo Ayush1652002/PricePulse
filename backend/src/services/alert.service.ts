@@ -1,17 +1,5 @@
 import prisma from "../config/prisma.js";
-import nodemailer from "nodemailer";
 import { sendPushNotification } from "./push.service.js";
-
-// Explicit host + port 587 (STARTTLS) to prevent IPv6 ENETUNREACH errors on cloud hosting (Render)
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // use STARTTLS for port 587
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 
 export async function checkTargetPrice(
   listingId: string,
@@ -50,7 +38,6 @@ export async function checkTargetPrice(
       },
     });
 
-    // One alert per target-price cycle.
     if (existingAlert?.lastTriggeredAt) {
       continue;
     }
@@ -77,52 +64,91 @@ export async function checkTargetPrice(
       },
     });
 
-    let emailDelivered = false;
-    let pushDelivered = false;
+    // Fire notifications asynchronously via Brevo HTTP API
+    dispatchNotifications(
+      notification.id,
+      tracking.user.email,
+      tracking.user.id,
+      listing.product.title,
+      listing.marketplace.name,
+      currentPrice,
+      targetPrice,
+      listing.url
+    ).catch((err) => console.error("Background dispatch error:", err));
+  }
+}
 
+async function dispatchNotifications(
+  notificationId: string,
+  userEmail: string,
+  userId: string,
+  productTitle: string,
+  marketplaceName: string,
+  currentPrice: number,
+  targetPrice: number,
+  productUrl: string
+) {
+  let emailDelivered = false;
+  let pushDelivered = false;
+
+  // 1. Send Email via Brevo HTTP API (Port 443 - Never blocked by Render)
+  if (process.env.BREVO_API_KEY) {
     try {
-      await transporter.sendMail({
-        from: `"PricePulse" <${process.env.SMTP_USER}>`,
-        to: tracking.user.email,
-        subject: `Price Alert: ${listing.product.title}`,
-        html: `
-          <h2>Price dropped! 🎉</h2>
-          <p><b>${listing.product.title}</b></p>
-          <p>${listing.marketplace.name}: ₹${currentPrice}</p>
-          <p>Your target: ₹${targetPrice}</p>
-          <a href="${listing.url}">View Product</a>
-        `,
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "accept": "application/json",
+          "api-key": process.env.BREVO_API_KEY,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: { name: "PricePulse", email: "alerts@pricepulse.app" },
+          to: [{ email: userEmail }],
+          subject: `Price Alert: ${productTitle}`,
+          htmlContent: `
+            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+              <h2 style="color: #7c3aed;">Price dropped! 🎉</h2>
+              <p style="font-size: 16px;"><b>${productTitle}</b></p>
+              <p style="font-size: 18px; color: #16a34a;"><b>${marketplaceName}: ₹${currentPrice}</b></p>
+              <p>Your target price: ₹${targetPrice}</p>
+              <br/>
+              <a href="${productUrl}" style="background-color: #7c3aed; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Product</a>
+            </div>
+          `,
+        }),
       });
 
-      emailDelivered = true;
-      console.log("Email sent to:", tracking.user.email);
+      if (response.ok) {
+        emailDelivered = true;
+        console.log("Brevo email sent to:", userEmail);
+      } else {
+        const errorText = await response.text();
+        console.error("Brevo email failed API response:", response.status, errorText);
+      }
     } catch (error) {
-      console.error("Email notification failed:", error);
+      console.error("Brevo email fetch error:", error);
     }
-
-    console.log("PUSH: Calling sendPushNotification...");
-
-    try {
-      pushDelivered = await sendPushNotification(
-        tracking.user.id,
-        `Price Alert: ${listing.product.title}`,
-        `${listing.marketplace.name} price is now ₹${currentPrice}. Target: ₹${targetPrice}`
-      );
-
-      console.log("PUSH: Result =", pushDelivered);
-    } catch (error) {
-      console.error("PUSH: Failed =", error);
-    }
-
-    await prisma.notification.update({
-      where: {
-        id: notification.id,
-      },
-      data: {
-        status: emailDelivered || pushDelivered ? "SENT" : "FAILED",
-        sentAt:
-          emailDelivered || pushDelivered ? new Date() : null,
-      },
-    });
+  } else {
+    console.warn("BREVO_API_KEY environment variable is not set.");
   }
+
+  // 2. Send Push Notification
+  try {
+    pushDelivered = await sendPushNotification(
+      userId,
+      `Price Alert: ${productTitle}`,
+      `${marketplaceName} price is now ₹${currentPrice}. Target: ₹${targetPrice}`
+    );
+  } catch (error) {
+    console.error("PUSH: Failed =", error);
+  }
+
+  // 3. Update Notification Status
+  await prisma.notification.update({
+    where: { id: notificationId },
+    data: {
+      status: emailDelivered || pushDelivered ? "SENT" : "FAILED",
+      sentAt: emailDelivered || pushDelivered ? new Date() : null,
+    },
+  });
 }
