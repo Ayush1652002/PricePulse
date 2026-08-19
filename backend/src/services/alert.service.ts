@@ -2,10 +2,11 @@ import prisma from "../config/prisma.js";
 import nodemailer from "nodemailer";
 import { sendPushNotification } from "./push.service.js";
 
-// Gmail SMTP transporter — uses App Password, NOT your Gmail password.
-// Generate one at: Google Account → Security → 2-Step Verification → App passwords
+// Explicit host + port 587 (STARTTLS) to prevent IPv6 ENETUNREACH errors on cloud hosting (Render)
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // use STARTTLS for port 587
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -49,8 +50,7 @@ export async function checkTargetPrice(
       },
     });
 
-    // One alert per target-price cycle. Resetting the alert clears
-    // lastTriggeredAt and allows a future price check to trigger again.
+    // One alert per target-price cycle.
     if (existingAlert?.lastTriggeredAt) {
       continue;
     }
@@ -80,7 +80,6 @@ export async function checkTargetPrice(
     let emailDelivered = false;
     let pushDelivered = false;
 
-    // Email should not prevent push notification delivery if SMTP fails.
     try {
       await transporter.sendMail({
         from: `"PricePulse" <${process.env.SMTP_USER}>`,
