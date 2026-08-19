@@ -64,7 +64,6 @@ export async function checkTargetPrice(
       },
     });
 
-    // Fire notifications asynchronously via Brevo HTTP API
     dispatchNotifications(
       notification.id,
       tracking.user.email,
@@ -91,7 +90,8 @@ async function dispatchNotifications(
   let emailDelivered = false;
   let pushDelivered = false;
 
-  // 1. Send Email via Brevo HTTP API (Port 443 - Never blocked by Render)
+  const senderEmail = process.env.SMTP_USER || "alerts@pricepulse.app";
+
   if (process.env.BREVO_API_KEY) {
     try {
       const response = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -102,7 +102,7 @@ async function dispatchNotifications(
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          sender: { name: "PricePulse", email: "alerts@pricepulse.app" },
+          sender: { name: "PricePulse", email: senderEmail },
           to: [{ email: userEmail }],
           subject: `Price Alert: ${productTitle}`,
           htmlContent: `
@@ -132,7 +132,6 @@ async function dispatchNotifications(
     console.warn("BREVO_API_KEY environment variable is not set.");
   }
 
-  // 2. Send Push Notification
   try {
     pushDelivered = await sendPushNotification(
       userId,
@@ -143,7 +142,6 @@ async function dispatchNotifications(
     console.error("PUSH: Failed =", error);
   }
 
-  // 3. Update Notification Status
   await prisma.notification.update({
     where: { id: notificationId },
     data: {
