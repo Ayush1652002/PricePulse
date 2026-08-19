@@ -1,8 +1,16 @@
 import prisma from "../config/prisma.js";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { sendPushNotification } from "./push.service.js";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Gmail SMTP transporter — uses App Password, NOT your Gmail password.
+// Generate one at: Google Account → Security → 2-Step Verification → App passwords
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 export async function checkTargetPrice(
   listingId: string,
@@ -72,10 +80,10 @@ export async function checkTargetPrice(
     let emailDelivered = false;
     let pushDelivered = false;
 
-    // Email should not prevent push notification delivery if Resend fails.
+    // Email should not prevent push notification delivery if SMTP fails.
     try {
-      const result = await resend.emails.send({
-        from: "PricePulse <onboarding@resend.dev>",
+      await transporter.sendMail({
+        from: `"PricePulse" <${process.env.SMTP_USER}>`,
         to: tracking.user.email,
         subject: `Price Alert: ${listing.product.title}`,
         html: `
@@ -87,28 +95,25 @@ export async function checkTargetPrice(
         `,
       });
 
-      emailDelivered = !result.error;
-
-      if (result.error) {
-        console.error("Email notification failed:", result.error);
-      }
+      emailDelivered = true;
+      console.log("Email sent to:", tracking.user.email);
     } catch (error) {
       console.error("Email notification failed:", error);
     }
 
-console.log("PUSH: Calling sendPushNotification...");
+    console.log("PUSH: Calling sendPushNotification...");
 
-try {
-  pushDelivered = await sendPushNotification(
-    tracking.user.id,
-    `Price Alert: ${listing.product.title}`,
-    `${listing.marketplace.name} price is now ₹${currentPrice}. Target: ₹${targetPrice}`
-  );
+    try {
+      pushDelivered = await sendPushNotification(
+        tracking.user.id,
+        `Price Alert: ${listing.product.title}`,
+        `${listing.marketplace.name} price is now ₹${currentPrice}. Target: ₹${targetPrice}`
+      );
 
-  console.log("PUSH: Result =", pushDelivered);
-} catch (error) {
-  console.error("PUSH: Failed =", error);
-}
+      console.log("PUSH: Result =", pushDelivered);
+    } catch (error) {
+      console.error("PUSH: Failed =", error);
+    }
 
     await prisma.notification.update({
       where: {

@@ -466,7 +466,12 @@ export default function Feed() {
     }
   };
 
-  const handleNotifications = async () => {
+    const handleNotifications = async () => {
+    // Request native browser notification permission first.
+    if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+
     setNotificationLoading(true);
 
     try {
@@ -475,7 +480,16 @@ export default function Feed() {
       alert("Notifications enabled! 🔔");
     } catch (error) {
       console.error(error);
-      alert("Push notifications are unavailable on this browser right now.");
+
+      if ("Notification" in window && Notification.permission === "granted") {
+        alert(
+          "Desktop notifications enabled! 🔔\nNote: Push (background) notifications are unavailable on this browser. You will see desktop alerts when checking price on this page."
+        );
+      } else {
+        alert(
+          "Notifications are blocked.\n\nTo fix: Browser Settings → Site permissions → Notifications → Allow for this site."
+        );
+      }
     } finally {
       setNotificationLoading(false);
     }
@@ -631,12 +645,39 @@ export default function Feed() {
     }
   };
 
-  const handleCheck = async (tracking: Tracking) => {
+  const showNativeNotification = (title: string, body: string) => {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      new Notification(title, { body, icon: "/favicon.ico" });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          new Notification(title, { body, icon: "/favicon.ico" });
+        }
+      });
+    }
+  };
+
+   const handleCheck = async (tracking: Tracking) => {
     setActionId(tracking.id);
 
     try {
       await checkProductPrice(tracking.product.id);
-      await loadProducts();
+
+      // Reload into a local var so we can check alert state immediately.
+      const productData = await getProducts();
+      setProducts(productData.products);
+
+      const updated = productData.products.find(
+        (p: Tracking) => p.id === tracking.id
+      );
+
+      if (updated?.alert?.isBelowTarget) {
+        showNativeNotification(
+          `🎉 Price Alert: ${updated.product.title}`,
+          `Price dropped to ₹${updated.product.listings[0]?.currentPrice}! Your target: ₹${updated.targetPrice}`
+        );
+      }
 
       if (history[tracking.product.id]) {
         const data = await getPriceHistory(tracking.product.id);
@@ -656,7 +697,6 @@ export default function Feed() {
       setActionId(null);
     }
   };
-
   const handleResetAlert = async (tracking: Tracking) => {
     setActionId(tracking.id);
 
