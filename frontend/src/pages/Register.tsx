@@ -8,6 +8,7 @@ export default function Register() {
   // Step 1 state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [step, setStep] = useState<"register" | "otp">("register");
   const [loading, setLoading] = useState(false);
 
@@ -113,17 +114,27 @@ export default function Register() {
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3"
                   required
                 />
+                <div className="relative">
+  <input
+    type={showPassword ? "text" : "password"}
+    placeholder="Password (min. 6 characters)"
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 pr-12"
+    minLength={6}
+    required
+  />
 
-                <input
-                  type="password"
-                  placeholder="Password (min. 6 characters)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3"
-                  minLength={6}
-                  required
-                />
-
+  <button
+    type="button"
+    onClick={() => setShowPassword((prev) => !prev)}
+    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+    aria-label={showPassword ? "Hide password" : "Show password"}
+  >
+    {showPassword ? "🙈" : "👁️"}
+  </button>
+</div>
+               
                 <button
                   type="submit"
                   disabled={loading}
