@@ -9,37 +9,37 @@ self.addEventListener("push", (event) => {
     };
   }
 
-  event.waitUntil(
-    self.registration.showNotification(
-      data.title || "PricePulse",
-      {
-        body:
-          data.body ||
-          "Your price alert was triggered.",
-        icon: "/favicon.svg",
-        badge: "/favicon.svg",
-      }
-    )
-  );
+  const title = data.title || "🔔 PricePulse Alert";
+  const options = {
+    body: data.body || "Your target price has been reached!",
+    icon: "/favicon.ico",
+    badge: "/favicon.ico",
+    data: {
+      url: data.url || "/feed",
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  event.waitUntil(
-    clients.matchAll({
-      type: "window",
-      includeUncontrolled: true,
-    }).then((clientList) => {
-      for (const client of clientList) {
-        if ("focus" in client) {
-          return client.focus();
-        }
-      }
+  const targetPath = event.notification.data?.url || "/feed";
+  const fullUrl = new URL(targetPath, self.location.origin).href;
 
-      if (clients.openWindow) {
-        return clients.openWindow("http://localhost:5174/");
-      }
-    })
+  event.waitUntil(
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && "focus" in client) {
+            return client.focus();
+          }
+        }
+        if (clients.openWindow) {
+          return clients.openWindow(fullUrl);
+        }
+      })
   );
 });

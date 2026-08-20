@@ -22,14 +22,6 @@ type UserProfile = {
   avatarUrl?: string | null;
 };
 
-type HistoryItem = {
-  id: string;
-  price: string;
-  currency: string;
-  checkedAt: string;
-  listing: { marketplace: { name: string } };
-};
-
 type Tracking = any;
 
 function ProductCard({
@@ -47,7 +39,7 @@ function ProductCard({
 }: {
   tracking: Tracking;
   busy: boolean;
-  history?: HistoryItem[];
+  history?: any[];
   historyOpen: boolean;
   onEdit: () => void;
   onStop: () => void;
@@ -77,11 +69,11 @@ function ProductCard({
           <span
             className={
               below
-                ? "bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-sm"
+                ? "bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-sm font-semibold border border-emerald-500/30"
                 : "bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-sm"
             }
           >
-            {below ? "TARGET REACHED" : tracking.status}
+            {below ? "🎉 TARGET REACHED" : tracking.status}
           </span>
 
           <button
@@ -120,7 +112,7 @@ function ProductCard({
       </div>
 
       {below && (
-        <div className="mb-5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="font-semibold text-emerald-300">
               Price is at or below your target 🎉
@@ -200,13 +192,13 @@ function ProductCard({
                   {[...history]
                     .reverse()
                     .slice(0, 10)
-                    .map((item) => (
+                    .map((item: any) => (
                       <tr
                         key={item.id}
                         className="border-b border-slate-900 last:border-0"
                       >
                         <td className="py-2.5">
-                          {item.listing.marketplace.name}
+                          {item.listing?.marketplace?.name || "Marketplace"}
                         </td>
                         <td className="py-2.5 font-semibold">
                           {item.currency} {item.price}
@@ -255,7 +247,7 @@ function NotificationsPanel({
               >
                 <p className="font-medium">
                   Price Alert:{" "}
-                  {notification.alert.trackedProduct.product.title}
+                  {notification.alert?.trackedProduct?.product?.title || "Product"}
                 </p>
                 <p className="text-sm text-slate-400 mt-1">
                   Your target price was reached.
@@ -416,7 +408,7 @@ export default function Feed() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const [actionId, setActionId] = useState<string | null>(null);
-  const [history, setHistory] = useState<Record<string, HistoryItem[]>>({});
+  const [history, setHistory] = useState<Record<string, any[]>>({});
   const [historyOpen, setHistoryOpen] = useState<Record<string, boolean>>({});
 
   const [editProduct, setEditProduct] = useState<Tracking | null>(null);
@@ -427,8 +419,23 @@ export default function Feed() {
     useState<"ACTIVE" | "PAUSED" | "STOPPED">("ACTIVE");
 
   const loadProducts = async () => {
-    const data = await getProducts();
-    setProducts(data.products);
+    try {
+      const data = await getProducts();
+      setProducts(data.products);
+
+      // Re-fetch fresh price history for open history tabs
+      for (const p of data.products) {
+        if (historyOpen[p.product.id]) {
+          try {
+            const histData = await getPriceHistory(p.product.id);
+            setHistory((current) => ({
+              ...current,
+              [p.product.id]: histData.history,
+            }));
+          } catch {}
+        }
+      }
+    } catch {}
   };
 
   useEffect(() => {
@@ -442,6 +449,16 @@ export default function Feed() {
         navigate("/");
       })
       .finally(() => setLoading(false));
+
+    // Auto-poll products every 10 seconds & when tab gains focus
+    const interval = setInterval(loadProducts, 10000);
+    const onFocus = () => loadProducts();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [navigate]);
 
   useEffect(() => {
@@ -466,8 +483,7 @@ export default function Feed() {
     }
   };
 
-    const handleNotifications = async () => {
-    // Request native browser notification permission first.
+  const handleNotifications = async () => {
     if ("Notification" in window && Notification.permission === "default") {
       await Notification.requestPermission();
     }
@@ -509,7 +525,7 @@ export default function Feed() {
     }
   };
 
-    const openEdit = (tracking: Tracking) => {
+  const openEdit = (tracking: Tracking) => {
     setEditProduct(tracking);
     setEditTitle(tracking.product.title);
     setEditTarget(String(tracking.targetPrice));
@@ -624,7 +640,7 @@ export default function Feed() {
       [id]: open,
     }));
 
-    if (!open || history[id]) return;
+    if (!open) return;
 
     try {
       const data = await getPriceHistory(id);
@@ -658,13 +674,14 @@ export default function Feed() {
     }
   };
 
-   const handleCheck = async (tracking: Tracking) => {
+  const handleCheck = async (tracking: Tracking) => {
     setActionId(tracking.id);
 
     try {
       await checkProductPrice(tracking.product.id);
 
-      // Reload into a local var so we can check alert state immediately.
+      await loadProducts();
+
       const productData = await getProducts();
       setProducts(productData.products);
 
@@ -679,9 +696,8 @@ export default function Feed() {
         );
       }
 
-      if (history[tracking.product.id]) {
+      if (historyOpen[tracking.product.id]) {
         const data = await getPriceHistory(tracking.product.id);
-
         setHistory((current) => ({
           ...current,
           [tracking.product.id]: data.history,
@@ -697,6 +713,7 @@ export default function Feed() {
       setActionId(null);
     }
   };
+
   const handleResetAlert = async (tracking: Tracking) => {
     setActionId(tracking.id);
 
@@ -887,7 +904,7 @@ export default function Feed() {
         )}
       </main>
 
-            <EditProductModal
+      <EditProductModal
         product={editProduct}
         title={editTitle}
         target={editTarget}

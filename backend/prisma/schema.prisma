@@ -150,3 +150,15 @@ model PushSubscription {
 
   @@index([userId])
 }
+
+model OtpVerification {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  hashedOtp      String
+  hashedPassword String
+  expiresAt      DateTime
+  attempts       Int       @default(0)
+  resendCount    Int       @default(0)
+  lastResentAt   DateTime?
+  createdAt      DateTime  @default(now())
+}

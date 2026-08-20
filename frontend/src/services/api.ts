@@ -47,6 +47,20 @@ export async function register(email: string, password: string) {
   });
 }
 
+export async function verifyOtp(email: string, otp: string) {
+  return request("/auth/verify-otp", {
+    method: "POST",
+    body: JSON.stringify({ email, otp }),
+  });
+}
+
+export async function resendOtp(email: string) {
+  return request("/auth/resend-otp", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 export async function logout() {
   return request("/auth/logout", { method: "POST" });
 }
