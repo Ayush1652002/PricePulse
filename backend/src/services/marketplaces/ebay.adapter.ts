@@ -1,5 +1,6 @@
+import * as cheerio from "cheerio";
 import type { MarketplaceAdapter, ProductData } from "./types.js";
-import { getEbayProduct } from "../ebay-product.service.js";
+import { fetchHtml, getExternalId, parsePrice, parseTitle } from "./helpers.js";
 
 export class EbayAdapter implements MarketplaceAdapter {
   canHandle(url: string) {
@@ -14,6 +15,14 @@ export class EbayAdapter implements MarketplaceAdapter {
   }
 
   async getProduct(url: string): Promise<ProductData> {
-    return getEbayProduct(url);
+    const $ = cheerio.load(await fetchHtml(url));
+
+    return {
+      marketplace: "eBay",
+      externalId: getExternalId(url, "eBay"),
+      title: parseTitle($),
+      price: parsePrice($),
+      currency: "INR",
+    };
   }
 }

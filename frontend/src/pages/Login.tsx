@@ -42,6 +42,9 @@ export default function Login() {
           <p className="text-slate-400 mt-2">
             Track prices. Buy at the right time.
           </p>
+          <div className="mt-3 inline-block bg-violet-950/60 border border-violet-800/60 text-violet-300 text-xs px-3 py-1.5 rounded-lg">
+            ✨ Currently supporting automatic price tracking for Amazon & Flipkart (full & short links). Meesho, Croma & eBay coming soon!
+          </div>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
@@ -82,19 +85,11 @@ export default function Login() {
             <div className="h-px bg-slate-700 flex-1" />
           </div>
 
-          {/*
-            Two-layer Google button:
-            - Bottom layer: our styled button, pointer-events: none (visual only)
-            - Top layer: actual GoogleLogin at opacity 0.01, receives all clicks
-            No backend change needed — same credential flow.
-          */}
           <div className="relative w-full" style={{ height: "44px" }}>
-            {/* Visual button — shown to the user, not clickable */}
             <div
               className="absolute inset-0 flex items-center justify-center gap-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-medium"
               style={{ pointerEvents: "none" }}
             >
-              {/* Proper Google G logo */}
               <svg
                 width="18"
                 height="18"
@@ -122,7 +117,6 @@ export default function Login() {
               Continue with Google
             </div>
 
-            {/* Actual Google OAuth button — nearly invisible, sits on top, receives clicks */}
             <div
               className="absolute inset-0 overflow-hidden rounded-xl cursor-pointer"
               style={{ opacity: 0.01 }}

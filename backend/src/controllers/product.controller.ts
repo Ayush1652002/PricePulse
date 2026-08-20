@@ -3,6 +3,7 @@ import { z } from "zod";
 import prisma from "../config/prisma.js";
 import EbayProvider from "../providers/ebay.provider.js";
 import { checkTargetPrice } from "../services/alert.service.js";
+import { findMarketplaceAdapter } from "../services/marketplaces/index.js";
 
 const listingSchema = z.object({
   marketplace: z.string().min(1),
@@ -28,16 +29,57 @@ function getUserId(req: Request) {
   return (req as any).user.userId as string;
 }
 
+export async function previewProduct(req: Request, res: Response) {
+  try {
+    const { url } = z.object({ url: z.string().url() }).parse(req.body);
+
+    const adapter = findMarketplaceAdapter(url);
+    if (!adapter) {
+      return res.status(400).json({
+        message: "Marketplace not supported.",
+      });
+    }
+
+    let productData;
+    try {
+      productData = await adapter.getProduct(url);
+    } catch (scrapeError) {
+      console.warn("Autofetch price failed, falling back to manual entry:", scrapeError);
+      
+      const domain = new URL(url).hostname.toLowerCase();
+      let marketplaceName = "Amazon";
+      if (domain.includes("flipkart")) marketplaceName = "Flipkart";
+      else if (domain.includes("meesho")) marketplaceName = "Meesho";
+      else if (domain.includes("croma")) marketplaceName = "Croma";
+      else if (domain.includes("ebay")) marketplaceName = "eBay";
+
+      productData = {
+        marketplace: marketplaceName,
+        externalId: `url-${Buffer.from(url).toString("base64url").slice(0, 40)}`,
+        title: null,
+        price: null,
+        currency: "INR",
+      };
+    }
+
+    return res.status(200).json(productData);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        message: "Invalid URL provided.",
+      });
+    }
+    return res.status(500).json({
+      message: "Failed to process product URL.",
+    });
+  }
+}
+
 export async function createProduct(req: Request, res: Response) {
   try {
     const data = createProductSchema.parse(req.body);
     const userId = getUserId(req);
 
-    /*
-     * A Product is the common product entity.
-     * A ProductListing identifies the marketplace-specific item.
-     * Reuse an existing listing when marketplace + externalId already exists.
-     */
     let productId: string | null = null;
 
     for (const input of data.listings) {
@@ -341,7 +383,6 @@ export async function updateTracking(req: Request, res: Response) {
     });
   }
 }
-
 
 export async function deleteTracking(req: Request, res: Response) {
   try {

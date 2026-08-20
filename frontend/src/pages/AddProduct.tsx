@@ -1,8 +1,26 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { createProduct, previewProduct } from "../services/api";
 
 const marketplaces = ["Amazon", "Flipkart", "Meesho", "Croma", "eBay", "Other"];
+
+const KNOWN_PATTERNS = [
+  { name: "Amazon", domains: ["amazon", "amzn"] },
+  { name: "Flipkart", domains: ["flipkart", "fkrt"] },
+  { name: "Meesho", domains: ["meesho"] },
+  { name: "Croma", domains: ["croma"] },
+  { name: "eBay", domains: ["ebay"] },
+];
+
+function detectMarketplaceFromUrl(url: string): string {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    for (const mp of KNOWN_PATTERNS) {
+      if (mp.domains.some((d) => hostname.includes(d))) return mp.name;
+    }
+  } catch {}
+  return "";
+}
 
 export default function AddProduct() {
   const navigate = useNavigate();
@@ -18,11 +36,27 @@ export default function AddProduct() {
 
   const [fetching, setFetching] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [priceFetchFailed, setPriceFetchFailed] = useState(false);
+
+  // Auto-detect marketplace & clear stale price/data when URL changes
+  useEffect(() => {
+    setPrice("");
+    setExternalId("");
+    setPriceFetchFailed(false);
+
+    if (!url.trim()) return;
+
+    const detected = detectMarketplaceFromUrl(url.trim());
+    if (detected) {
+      setMarketplace(detected);
+    }
+  }, [url]);
 
   const fetchDetails = async () => {
     if (!url.trim()) return;
 
     setFetching(true);
+    setPriceFetchFailed(false);
 
     try {
       const data = await previewProduct(url.trim(), marketplace);
@@ -31,15 +65,14 @@ export default function AddProduct() {
       setCurrency(data.currency || "INR");
 
       if (data.marketplace) setMarketplace(data.marketplace);
-      if (data.price) setPrice(String(data.price));
-
-      // NOTE: title and target are NOT autofilled — user must enter manually.
+      if (data.price) {
+        setPrice(String(data.price));
+        setPriceFetchFailed(false);
+      } else {
+        setPriceFetchFailed(true);
+      }
     } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Could not fetch product details."
-      );
+      setPriceFetchFailed(true);
     } finally {
       setFetching(false);
     }
@@ -172,6 +205,13 @@ export default function AddProduct() {
           <p className="ml-48 -mt-2 text-xs text-slate-500">
             Auto-filled after "Fetch Details". Enter manually if scraping fails.
           </p>
+
+          {/* Yellow warning message when price auto-fetch fails */}
+          {priceFetchFailed && (
+            <p className="ml-48 text-xs text-amber-400 font-medium">
+              ⚠️ Could not fetch price automatically. Please enter current price manually.
+            </p>
+          )}
 
           {/* 4. Marketplace — autofilled from URL, editable */}
           <div className="flex items-center gap-4">
