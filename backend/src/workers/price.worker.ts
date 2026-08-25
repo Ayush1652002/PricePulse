@@ -1,30 +1,54 @@
 import { Worker } from "bullmq";
+import { redisConnection, testRedisConnection } from "../config/redis.js";
 import { checkListingPrice } from "../services/price.service.js";
+import { queueActiveListingsCheck } from "../queues/price.queue.js";
 
-const worker = new Worker(
-  "price-check",
-  async (job) => {
-    if (!job.data.listingId) {
-      throw new Error("listingId missing from price-check job.");
-    }
+let workerInstance: Worker | null = null;
 
-    return await checkListingPrice(job.data.listingId);
-  },
-  {
-    connection: {
-      host: "127.0.0.1",
-      port: 6379,
-    },
+export async function startPriceWorker() {
+  const isRedisAvailable = await testRedisConnection();
+  if (!isRedisAvailable) {
+    return null;
   }
-);
 
-worker.on("completed", (job) => {
-  console.log(`Price check ${job.id} completed.`);
-});
+  if (!workerInstance) {
+    workerInstance = new Worker(
+      "price-check",
+      async (job) => {
+        if (job.name === "schedule-all-price-checks") {
+          console.log(
+            "[BullMQ Worker] Recurring trigger: checking active listings..."
+          );
+          return await queueActiveListingsCheck();
+        }
 
-worker.on("failed", (job, error) => {
-  console.error(
-    `Price check ${job?.id} failed:`,
-    error.message
-  );
-});
+        if (!job.data?.listingId) {
+          throw new Error("listingId missing from price-check job.");
+        }
+
+        return await checkListingPrice(job.data.listingId);
+      },
+      {
+        connection: redisConnection,
+        concurrency: 5,
+      }
+    );
+
+    workerInstance.on("completed", (job) => {
+      console.log(`[BullMQ Worker] Job ${job.name} (${job.id}) completed.`);
+    });
+
+    workerInstance.on("failed", (job, error) => {
+      console.error(
+        `[BullMQ Worker] Job ${job?.name} (${job?.id}) failed:`,
+        error.message
+      );
+    });
+
+    workerInstance.on("error", (error) => {
+      console.error("[BullMQ Worker Error]:", error);
+    });
+  }
+
+  return workerInstance;
+}
