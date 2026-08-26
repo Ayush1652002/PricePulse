@@ -92,7 +92,7 @@ export function parsePrice($: cheerio.CheerioAPI): number | null {
     }
   }
 
-  // 2. eBay Specific Price Selectors (Matches data-testid="x-price-primary" span.ux-textspans)
+  // 2. eBay Specific Price Selectors
   const ebaySelectors = [
     "[data-testid='x-price-primary'] .ux-textspans",
     "[data-testid='x-price-primary']",
@@ -223,40 +223,53 @@ export function parseTitle($: cheerio.CheerioAPI): string | null {
 export async function fetchHtml(url: string) {
   const resolvedUrl = isShortUrl(url) ? await resolveShortUrl(url) : url;
 
-  // For eBay URLs: use corsproxy.io / allorigins to bypass eBay Error Page block
-  if (resolvedUrl.toLowerCase().includes("ebay")) {
-    try {
-      const corsRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(resolvedUrl)}`);
-      if (corsRes.ok) {
-        const html = await corsRes.text();
-        if (!html.toLowerCase().includes("error page") && html.length > 1000) {
-          return html;
-        }
+  // 1. Try Direct Fetch with realistic Browser Headers first (super fast, no rate-limits)
+  try {
+    const directRes = await fetch(resolvedUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept":
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
+        "Cache-Control": "no-cache",
+      },
+    });
+
+    if (directRes.ok) {
+      const html = await directRes.text();
+      if (html && html.length > 1000 && !html.toLowerCase().includes("validatecaptcha")) {
+        return html;
       }
-    } catch {}
+    }
+  } catch {}
 
-    try {
-      const aoRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(resolvedUrl)}`);
-      if (aoRes.ok) {
-        const html = await aoRes.text();
-        if (!html.toLowerCase().includes("error page") && html.length > 1000) {
-          return html;
-        }
+  // 2. Primary Proxy Fallback (Jina AI)
+  try {
+    const response = await fetch(`https://r.jina.ai/${resolvedUrl}`, {
+      headers: {
+        "X-Return-Format": "html",
+        "Accept-Language": "en-IN,en;q=0.9",
+      },
+    });
+
+    if (response.ok) {
+      const html = await response.text();
+      if (html && html.length > 500) {
+        return html;
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
-  // Fallback / default Jina fetch for Amazon & Flipkart (UNTOUCHED)
-  const response = await fetch(`https://r.jina.ai/${resolvedUrl}`, {
-    headers: {
-      "X-Return-Format": "html",
-      "Accept-Language": "en-IN,en;q=0.9",
-    },
-  });
+  // 3. Universal Proxy Fallback (CorsProxy / AllOrigins)
+  try {
+    const corsRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(resolvedUrl)}`);
+    if (corsRes.ok) {
+      const html = await corsRes.text();
+      if (html && html.length > 1000) return html;
+    }
+  } catch {}
 
-  if (!response.ok) {
-    throw new Error(`Marketplace returned ${response.status}`);
-  }
-
-  return response.text();
+  throw new Error("Unable to fetch product page from marketplace.");
 }

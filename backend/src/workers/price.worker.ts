@@ -26,11 +26,14 @@ export async function startPriceWorker() {
           throw new Error("listingId missing from price-check job.");
         }
 
+        // Small stagger to prevent burst rate limits on marketplace scrapers
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
         return await checkListingPrice(job.data.listingId);
       },
       {
         connection: redisConnection,
-        concurrency: 5,
+        concurrency: 3,
       }
     );
 

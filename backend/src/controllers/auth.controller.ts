@@ -15,6 +15,14 @@ const registerSchema = z.object({
   password: z.string().min(6),
 });
 
+// Configurable session duration in days (Default: 30 days)
+const AUTH_EXPIRY_DAYS = Math.max(
+  1,
+  Number(process.env.AUTH_SESSION_EXPIRY_DAYS) || 30
+);
+const COOKIE_MAX_AGE_MS = AUTH_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+const JWT_EXPIRES_IN = `${AUTH_EXPIRY_DAYS}d`;
+
 function setAuthCookie(res: Response, token: string) {
   const isProduction = process.env.NODE_ENV === "production";
 
@@ -22,7 +30,7 @@ function setAuthCookie(res: Response, token: string) {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? "none" : "lax",
-    maxAge: 60 * 60 * 1000,
+    maxAge: COOKIE_MAX_AGE_MS,
   });
 }
 
@@ -30,7 +38,7 @@ function signToken(user: { id: string; email: string }) {
   return jwt.sign(
     { userId: user.id, email: user.email },
     process.env.JWT_SECRET!,
-    { expiresIn: "1h" }
+    { expiresIn: JWT_EXPIRES_IN as any }
   );
 }
 
@@ -139,7 +147,7 @@ async function sendOtpEmail(email: string, otp: string) {
     body: JSON.stringify({
       sender: {
         name: process.env.BREVO_FROM_NAME || "PricePulse",
-        email: process.env.SMTP_USER || "alerts@pricepulse.app",
+        email: process.env.BREVO_FROM_EMAIL || "noreply@pricepulse.app",
       },
       to: [{ email }],
       subject: "Your PricePulse OTP Code",
@@ -162,8 +170,6 @@ async function sendOtpEmail(email: string, otp: string) {
     throw new Error("Failed to send OTP email.");
   }
 }
-
-// ─── EXISTING CONTROLLERS — 100% UNTOUCHED ────────────────────────────────────
 
 export async function loginUser(req: Request, res: Response) {
   try {
