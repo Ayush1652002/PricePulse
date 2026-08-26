@@ -483,29 +483,58 @@ export default function Feed() {
     }
   };
 
+  // 🩺 DIAGNOSTIC NOTIFICATION HANDLER
   const handleNotifications = async () => {
-    if ("Notification" in window && Notification.permission === "default") {
-      await Notification.requestPermission();
-    }
-
     setNotificationLoading(true);
 
+    const isSecure = window.isSecureContext;
+    const hasSW = "serviceWorker" in navigator;
+    const hasPush = "PushManager" in window;
+    const currentPermission = "Notification" in window ? Notification.permission : "Not Supported";
+    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+
+    console.log("[Diagnostic Info]:", {
+      isSecure,
+      hasSW,
+      hasPush,
+      currentPermission,
+      vapidKeyLength: vapidKey ? vapidKey.length : 0,
+    });
+
     try {
+      if (!isSecure) {
+        throw new Error("Site is not in a Secure Context (HTTPS or localhost required for Push).");
+      }
+      if (!hasSW) {
+        throw new Error("Service Workers are not supported in this browser mode.");
+      }
+      if (!hasPush) {
+        throw new Error("PushManager is not supported in this browser.");
+      }
+      if (!vapidKey) {
+        throw new Error("VITE_VAPID_PUBLIC_KEY is missing from frontend environment.");
+      }
+
+      // Request permission
+      const requestedPermission = await Notification.requestPermission();
+      if (requestedPermission !== "granted") {
+        throw new Error(`Notification permission was ${requestedPermission} by browser.`);
+      }
+
       const subscription = await registerPushNotifications();
       await subscribeToNotifications(subscription);
-      alert("Notifications enabled! 🔔");
-    } catch (error) {
-      console.error(error);
-
-      if ("Notification" in window && Notification.permission === "granted") {
-        alert(
-          "Desktop notifications enabled! 🔔\nNote: Push (background) notifications are unavailable on this browser. You will see desktop alerts when checking price on this page."
-        );
-      } else {
-        alert(
-          "Notifications are blocked.\n\nTo fix: Browser Settings → Site permissions → Notifications → Allow for this site."
-        );
-      }
+      alert("✅ Notifications enabled successfully! 🔔");
+    } catch (error: any) {
+      console.error("[Diagnostic Error]:", error);
+      alert(
+        `🔍 Push Diagnostic Report:\n\n` +
+        `• Permission: ${"Notification" in window ? Notification.permission : "N/A"}\n` +
+        `• Secure Context (HTTPS): ${isSecure ? "YES" : "NO"}\n` +
+        `• Service Worker: ${hasSW ? "YES" : "NO"}\n` +
+        `• PushManager: ${hasPush ? "YES" : "NO"}\n` +
+        `• VAPID Key: ${vapidKey ? `Present (${vapidKey.length} chars)` : "MISSING ❌"}\n\n` +
+        `❌ Exact Error: ${error?.message || error}`
+      );
     } finally {
       setNotificationLoading(false);
     }
@@ -759,7 +788,7 @@ export default function Feed() {
             disabled={notificationLoading}
             className="hidden sm:block bg-slate-800 hover:bg-slate-700 disabled:opacity-60 px-4 py-2 rounded-lg text-sm font-medium"
           >
-            {notificationLoading ? "Enabling..." : "Enable alerts"}
+            {notificationLoading ? "Checking..." : "Enable alerts"}
           </button>
 
           <div className="relative" ref={menuRef}>
@@ -823,7 +852,7 @@ export default function Feed() {
                 >
                   🔔{" "}
                   {notificationLoading
-                    ? "Enabling..."
+                    ? "Checking..."
                     : "Enable notifications"}
                 </button>
 

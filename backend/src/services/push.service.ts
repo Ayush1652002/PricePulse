@@ -8,7 +8,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     process.env.VAPID_PRIVATE_KEY
   );
 } else {
-  console.warn("VAPID keys are missing from environment variables.");
+  console.warn("[WebPush] VAPID keys are missing from environment variables.");
 }
 
 export async function sendPushNotification(
@@ -17,7 +17,7 @@ export async function sendPushNotification(
   body: string
 ) {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
-    console.warn("Push skipped: VAPID keys not configured.");
+    console.warn("[WebPush] Push skipped: VAPID keys not configured.");
     return false;
   }
 
@@ -25,12 +25,16 @@ export async function sendPushNotification(
     where: { userId },
   });
 
+  console.log(`[WebPush] User: ${userId}`);
+  console.log(`[WebPush] Push subscriptions found: ${subscriptions.length}`);
+
   if (subscriptions.length === 0) {
-    console.log(`No push subscriptions found for user ${userId}.`);
+    console.log(`[WebPush] Summary — found: 0, sent: 0, failed: 0`);
     return false;
   }
 
-  let delivered = 0;
+  let sent = 0;
+  let failed = 0;
 
   for (const subscription of subscriptions) {
     try {
@@ -49,30 +53,33 @@ export async function sendPushNotification(
         })
       );
 
-      delivered += 1;
-      console.log(`PUSH: Delivered successfully to subscription ${subscription.id}`);
+      sent += 1;
+      console.log(`[WebPush] Push sent to subscription: ${subscription.id}`);
     } catch (error: any) {
-      const statusCode = error?.statusCode;
-      const responseBody = error?.body;
+      failed += 1;
+      const statusCode = error?.statusCode || "UNKNOWN";
+      const errorMsg = error?.message || error;
 
-      console.error("PUSH ERROR:", {
-        statusCode,
-        message: error?.message,
-        body: responseBody,
-      });
+      console.error(
+        `[WebPush] Push failed for subscription ${subscription.id}: HTTP ${statusCode} (${errorMsg})`
+      );
 
-      // Remove expired/invalid subscriptions automatically (Multi-device management)
+      // Remove expired/invalid subscriptions (404 Not Found / 410 Gone)
       if (statusCode === 404 || statusCode === 410) {
         await prisma.pushSubscription.deleteMany({
           where: { endpoint: subscription.endpoint },
         });
 
         console.warn(
-          `Removed expired push subscription for user ${userId}.`
+          `[WebPush] Removed expired/invalid subscription: ${subscription.id}`
         );
       }
     }
   }
 
-  return delivered > 0;
+  console.log(
+    `[WebPush] Summary — found: ${subscriptions.length}, sent: ${sent}, failed: ${failed}`
+  );
+
+  return sent > 0;
 }
