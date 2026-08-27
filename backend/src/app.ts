@@ -7,6 +7,8 @@ import notificationRoutes from "./routes/notification.routes.js";
 import { createHash } from "crypto";
 
 const app = express();
+// 🟢 Health check for cron-job.org keep-alive
+app.get("/", (_req, res) => res.status(200).json({ status: "ok" }));
 
 const EBAY_VERIFICATION_TOKEN = "PricePulse-eBay-Verify-2026";
 
