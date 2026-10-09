@@ -29,7 +29,6 @@ export async function previewProduct(req: Request, res: Response) {
       };
     }
 
-    console.log("PRODUCT PREVIEW:", result);
     return res.status(200).json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {

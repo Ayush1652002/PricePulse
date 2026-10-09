@@ -13,14 +13,27 @@ async function request(url: string, options: RequestInit = {}) {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      // Proves the request comes from this website (used by the server's CSRF protection).
+      "X-Requested-With": "pricepulse",
       ...(options.headers || {}),
     },
   });
 
-  const data = await response.json();
+  // The server can answer with something that is not JSON (for example a 502 page while it wakes up).
+  // Reading it safely gives a clear message instead of a confusing "Unexpected token <" error.
+  const text = await response.text();
+  let data: any = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
 
   if (!response.ok) {
-    throw new Error(data.message || "Request failed.");
+    if (data?.message) throw new Error(data.message);
+    if (response.status === 429) throw new Error("Too many requests. Please wait a moment and try again.");
+    throw new Error("Request failed. Please try again.");
   }
 
   return data;

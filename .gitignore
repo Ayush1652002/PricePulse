@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# environment files (real secrets). The *.example files ARE committed.
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+coverage/
+*.log
+
+# generated Prisma client (created by `npx prisma generate`)
+backend/generated/
+
+# archives and AI-tool folders that do not belong in the repository
+*.zip
+.claude/
+.windsurf/
+.agents/
+skills-lock.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

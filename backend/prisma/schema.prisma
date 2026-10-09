@@ -7,71 +7,53 @@ datasource db {
   provider = "postgresql"
 }
 
-enum TrackingStatus {
-  ACTIVE
-  PAUSED
-  STOPPED
-}
-
-enum NotificationStatus {
-  PENDING
-  SENT
-  FAILED
-}
-
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  googleId  String?  @unique
-  displayName String?
-  avatarUrl   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  trackedProducts TrackedProduct[]
+  id                String             @id @default(uuid())
+  email             String             @unique
+  password          String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  googleId          String?            @unique
+  displayName       String?
+  avatarUrl         String?
   pushSubscriptions PushSubscription[]
+  trackedProducts   TrackedProduct[]
 }
 
 model Marketplace {
-  id        String   @id @default(uuid())
-  name      String   @unique
+  id        String           @id @default(uuid())
+  name      String           @unique
   baseUrl   String
-  createdAt DateTime @default(now())
-
-  listings ProductListing[]
+  createdAt DateTime         @default(now())
+  listings  ProductListing[]
 }
 
 model Product {
-  id        String   @id @default(uuid())
-  title     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  id              String           @id @default(uuid())
+  title           String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   listings        ProductListing[]
   trackedProducts TrackedProduct[]
 }
 
 model ProductListing {
-  id                  String   @id @default(uuid())
-  externalId         String
+  id                  String         @id @default(uuid())
+  externalId          String
   url                 String
-  imageUrl           String?
-  currentPrice       Decimal  @db.Decimal(12, 2)
-  previousPrice      Decimal? @db.Decimal(12, 2)
-  lowestObservedPrice Decimal  @db.Decimal(12, 2)
-  currency           String   @default("USD")
-  lastCheckedAt      DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  productId     String
-  marketplaceId String
-
-  product     Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  marketplace Marketplace @relation(fields: [marketplaceId], references: [id], onDelete: Cascade)
-
-  priceHistory PriceHistory[]
+  imageUrl            String?
+  currentPrice        Decimal        @db.Decimal(12, 2)
+  previousPrice       Decimal?       @db.Decimal(12, 2)
+  lowestObservedPrice Decimal        @db.Decimal(12, 2)
+  currency            String         @default("USD")
+  lastCheckedAt       DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  productId           String
+  marketplaceId       String
+  priceHistory        PriceHistory[]
+  marketplace         Marketplace    @relation(fields: [marketplaceId], references: [id], onDelete: Cascade)
+  product             Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([marketplaceId, externalId])
   @@unique([productId, marketplaceId])
@@ -85,14 +67,12 @@ model TrackedProduct {
   status      TrackingStatus @default(ACTIVE)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
-
-  userId    String
-  productId String
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  alert Alert?
+  userId      String
+  productId   String
+  customTitle String?
+  alert       Alert?
+  product     Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
   @@index([userId])
@@ -101,11 +81,10 @@ model TrackedProduct {
 }
 
 model PriceHistory {
-  id        String   @id @default(uuid())
-  price     Decimal  @db.Decimal(12, 2)
+  id        String         @id @default(uuid())
+  price     Decimal        @db.Decimal(12, 2)
   currency  String
-  checkedAt DateTime @default(now())
-
+  checkedAt DateTime       @default(now())
   listingId String
   listing   ProductListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
@@ -113,16 +92,14 @@ model PriceHistory {
 }
 
 model Alert {
-  id              String   @id @default(uuid())
-  isBelowTarget   Boolean  @default(false)
-  lastTriggeredAt DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  trackedProductId String @unique
+  id               String         @id @default(uuid())
+  isBelowTarget    Boolean        @default(false)
+  lastTriggeredAt  DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  trackedProductId String         @unique
   trackedProduct   TrackedProduct @relation(fields: [trackedProductId], references: [id], onDelete: Cascade)
-
-  notifications Notification[]
+  notifications    Notification[]
 }
 
 model Notification {
@@ -130,9 +107,8 @@ model Notification {
   status    NotificationStatus @default(PENDING)
   sentAt    DateTime?
   createdAt DateTime           @default(now())
-
-  alertId String
-  alert   Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  alertId   String
+  alert     Alert              @relation(fields: [alertId], references: [id], onDelete: Cascade)
 
   @@index([alertId, createdAt])
 }
@@ -144,9 +120,8 @@ model PushSubscription {
   auth      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -161,4 +136,16 @@ model OtpVerification {
   resendCount    Int       @default(0)
   lastResentAt   DateTime?
   createdAt      DateTime  @default(now())
+}
+
+enum TrackingStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
 }

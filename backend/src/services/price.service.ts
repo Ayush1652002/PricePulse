@@ -1,6 +1,7 @@
 import prisma from "../config/prisma.js";
 import { fetchProductPrice } from "./marketplace.service.js";
 import { checkTargetPrice } from "./alert.service.js";
+import { findMarketplaceAdapter } from "./marketplaces/index.js";
 import { PRICE_HISTORY_RETENTION } from "../config/retention.config.js";
 
 /**
@@ -60,14 +61,26 @@ export async function checkListingPrice(listingId: string) {
     throw new Error("Listing not found.");
   }
 
+  // Listings on shops we cannot read automatically (manual entries) are skipped, not failed.
+  let supported = false;
+  try {
+    supported = Boolean(findMarketplaceAdapter(listing.url));
+  } catch {
+    supported = false;
+  }
+
+  if (!supported) {
+    console.warn(`Price check skipped for listing ${listingId}: marketplace not supported.`);
+    return listing;
+  }
+
+  // Errors are NOT swallowed any more: when the price cannot be read, this function throws.
+  // The worker (BullMQ) then retries the job with a delay, and the failure is visible in the logs.
   try {
     const price = await fetchProductPrice(listing.url);
 
     if (!price || isNaN(Number(price)) || Number(price) <= 0) {
-      console.warn(
-        `Price check skipped for listing ${listingId}: Invalid or null price returned.`
-      );
-      return listing;
+      throw new Error("Invalid or empty price returned.");
     }
 
     const numericPrice = Number(price);
@@ -108,6 +121,6 @@ export async function checkListingPrice(listingId: string) {
       `checkListingPrice failed for listing ${listingId}:`,
       error
     );
-    return listing;
+    throw error;
   }
 }

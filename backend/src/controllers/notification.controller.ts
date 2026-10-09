@@ -81,7 +81,22 @@ export async function getNotifications(req: Request, res: Response) {
       take: 20,
     });
 
-    return res.status(200).json({ notifications });
+    // Show the name this user gave the product (the shared Product.title is the same for everyone).
+    const withOwnTitle = notifications.map((n) => ({
+      ...n,
+      alert: {
+        ...n.alert,
+        trackedProduct: {
+          ...n.alert.trackedProduct,
+          product: {
+            ...n.alert.trackedProduct.product,
+            title: n.alert.trackedProduct.customTitle ?? n.alert.trackedProduct.product.title,
+          },
+        },
+      },
+    }));
+
+    return res.status(200).json({ notifications: withOwnTitle });
   } catch (error) {
     console.error(error);
 

@@ -12,7 +12,24 @@ import {
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  // bcrypt only reads the first 72 bytes, so very long passwords only waste server time.
+  password: z.string().min(6).max(72),
+});
+
+// Login only needs "something was typed"; the real check is bcrypt.compare below.
+// (Using the register rules here would lock out accounts created under older rules.)
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+const verifyOtpSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().trim().regex(/^\d{6}$/),
+});
+
+const resendOtpSchema = z.object({
+  email: z.string().email(),
 });
 
 // Configurable session duration in days (Default: 30 days)
@@ -38,7 +55,7 @@ function signToken(user: { id: string; email: string }) {
   return jwt.sign(
     { userId: user.id, email: user.email },
     process.env.JWT_SECRET!,
-    { expiresIn: JWT_EXPIRES_IN as any }
+    { expiresIn: JWT_EXPIRES_IN as any, algorithm: "HS256" }
   );
 }
 
@@ -53,10 +70,14 @@ export async function registerUser(req: Request, res: Response) {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const otp = await createOtpVerification(email, hashedPassword);
+    const created = await createOtpVerification(email, hashedPassword);
+
+    if (!created.success) {
+      return res.status(429).json({ message: created.message });
+    }
 
     // Send OTP email via Brevo HTTP API
-    await sendOtpEmail(email, otp);
+    await sendOtpEmail(email, created.otp);
 
     return res.status(200).json({
       message: "OTP sent to your email. Please verify to complete registration.",
@@ -73,13 +94,9 @@ export async function registerUser(req: Request, res: Response) {
 // Step 2: Verify OTP → create user account → set JWT cookie
 export async function verifyOtp(req: Request, res: Response) {
   try {
-    const { email, otp } = req.body;
+    const { email, otp } = verifyOtpSchema.parse(req.body);
 
-    if (!email || !otp) {
-      return res.status(400).json({ message: "Email and OTP are required." });
-    }
-
-    const result = await verifyOtpService(email, otp.trim());
+    const result = await verifyOtpService(email, otp);
 
     if (!result.success || !result.hashedPassword) {
       return res.status(400).json({ message: result.message });
@@ -106,6 +123,13 @@ export async function verifyOtp(req: Request, res: Response) {
       },
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: "Email and a 6-digit OTP are required." });
+    }
+    // Two verify requests at the same moment can both reach user.create; the second one fails here.
+    if ((error as { code?: string })?.code === "P2002") {
+      return res.status(409).json({ message: "User already exists." });
+    }
     console.error("Verify OTP error:", error);
     return res.status(500).json({ message: "Internal server error." });
   }
@@ -114,11 +138,7 @@ export async function verifyOtp(req: Request, res: Response) {
 // Resend OTP
 export async function resendOtp(req: Request, res: Response) {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ message: "Email is required." });
-    }
+    const { email } = resendOtpSchema.parse(req.body);
 
     const result = await resendOtpService(email);
 
@@ -131,6 +151,9 @@ export async function resendOtp(req: Request, res: Response) {
 
     return res.status(200).json({ message: "OTP resent to your email." });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: "Email is required." });
+    }
     console.error("Resend OTP error:", error);
     return res.status(500).json({ message: "Internal server error." });
   }
@@ -144,6 +167,7 @@ async function sendOtpEmail(email: string, otp: string) {
       "api-key": process.env.BREVO_API_KEY!,
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(10_000),
     body: JSON.stringify({
       sender: {
         name: process.env.BREVO_FROM_NAME || "PricePulse",
@@ -173,7 +197,7 @@ async function sendOtpEmail(email: string, otp: string) {
 
 export async function loginUser(req: Request, res: Response) {
   try {
-    const { email, password } = registerSchema.parse(req.body);
+    const { email, password } = loginSchema.parse(req.body);
 
     const user = await prisma.user.findUnique({ where: { email } });
 
@@ -218,6 +242,12 @@ export async function googleLogin(req: Request, res: Response) {
 
     if (!payload?.email || !payload.sub) {
       return res.status(401).json({ message: "Invalid Google account." });
+    }
+
+    // Only trust the email if Google says it is verified. Otherwise someone could sign in
+    // with a Google account that merely *claims* another person's email address.
+    if (payload.email_verified !== true) {
+      return res.status(401).json({ message: "Your Google email is not verified." });
     }
 
     let user = await prisma.user.findUnique({ where: { email: payload.email } });

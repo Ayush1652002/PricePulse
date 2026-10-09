@@ -55,8 +55,6 @@ export async function runDirectPriceChecks() {
  * Guaranteed: Only 1 repeatable schedule registered in Redis.
  */
 async function startBullMQScheduler() {
-  isBullMQActive = true;
-
   try {
     // 1. Purge all existing/stale repeatable jobs to prevent zombie schedules
     await purgeOldRepeatableJobs();
@@ -84,10 +82,15 @@ async function startBullMQScheduler() {
       );
     }
 
+    // Only mark BullMQ as active AFTER registration worked. (It used to be set before, which
+    // made the in-memory fallback refuse to start when registration failed.)
+    isBullMQActive = true;
+
     console.log(
       `[PricePulse] 🟢 Redis connected! BullMQ Scheduler active (Interval: ${PRICE_CHECK_INTERVAL_MINUTES} min).`
     );
   } catch (error) {
+    isBullMQActive = false;
     console.warn(
       "[PricePulse] BullMQ registration failed. Activating in-memory fallback...",
       error

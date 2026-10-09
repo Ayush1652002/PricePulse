@@ -8,20 +8,45 @@ export function isShortUrl(url: string): boolean {
   return /^https?:\/\/(www\.)?(amzn\.(in|to|com|eu)|dl\.flipkart\.com|fkrt\.it)\//i.test(url);
 }
 
+// Every network call below stops after a few seconds, so one slow website cannot block a worker.
+const SHORT_URL_TIMEOUT_MS = 8_000;
+const DIRECT_FETCH_TIMEOUT_MS = 10_000;
+const PROXY_FETCH_TIMEOUT_MS = 15_000;
+
+// A short link may only end up on one of the shops we support.
+const ALLOWED_REDIRECT_HOST = /(^|\.)(amazon\.[a-z.]+|flipkart\.com|croma\.com|ebay\.[a-z.]+)$/i;
+
+function isAllowedRedirectTarget(url: string): boolean {
+  try {
+    return ALLOWED_REDIRECT_HOST.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveShortUrl(url: string): Promise<string> {
+  let finalUrl = url;
+
   try {
     const response = await fetch(url, {
       method: "GET",
       redirect: "follow",
+      signal: AbortSignal.timeout(SHORT_URL_TIMEOUT_MS),
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       },
     });
-    return response.url || url;
+    finalUrl = response.url || url;
   } catch {
     return url;
   }
+
+  if (!isAllowedRedirectTarget(finalUrl)) {
+    throw new Error("Short link redirected to an unsupported website.");
+  }
+
+  return finalUrl;
 }
 
 export function getExternalId(url: string, marketplace: string) {
@@ -235,6 +260,7 @@ export async function fetchHtml(url: string) {
         "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
         "Cache-Control": "no-cache",
       },
+      signal: AbortSignal.timeout(DIRECT_FETCH_TIMEOUT_MS),
     });
 
     if (directRes.ok) {
@@ -252,6 +278,7 @@ export async function fetchHtml(url: string) {
         "X-Return-Format": "html",
         "Accept-Language": "en-IN,en;q=0.9",
       },
+      signal: AbortSignal.timeout(PROXY_FETCH_TIMEOUT_MS),
     });
 
     if (response.ok) {
@@ -264,7 +291,9 @@ export async function fetchHtml(url: string) {
 
   // 3. Universal Proxy Fallback (CorsProxy / AllOrigins)
   try {
-    const corsRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(resolvedUrl)}`);
+    const corsRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(resolvedUrl)}`, {
+      signal: AbortSignal.timeout(PROXY_FETCH_TIMEOUT_MS),
+    });
     if (corsRes.ok) {
       const html = await corsRes.text();
       if (html && html.length > 1000) return html;

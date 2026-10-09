@@ -4,7 +4,6 @@ import {
   getProducts,
   getProduct,
   updateTracking,
-  stopTracking,
   deleteTracking,
   getPriceHistory,
    updatePrice,
@@ -13,6 +12,7 @@ import prisma from "../config/prisma.js";
 import { authenticateToken } from "../middleware/auth.middleware.js";
 import { checkListingPrice } from "../services/price.service.js";
 import { previewProduct } from "../controllers/product-preview.controller.js";
+import { previewLimiter, checkLimiter } from "../middleware/rateLimit.js";
 
 const router = express.Router();
 
@@ -20,7 +20,7 @@ router.use(authenticateToken);
 
 router.post("/", createProduct);
 router.get("/", getProducts);
-router.post("/preview", previewProduct);
+router.post("/preview", previewLimiter, previewProduct);
 router.get("/:id", getProduct);
 router.patch("/:id", updateTracking);
 router.patch("/:id/price", updatePrice);
@@ -34,7 +34,7 @@ router.post("/:id/reset-alert", async (req, res) => {
 
     const tracking = await prisma.trackedProduct.findFirst({
       where: {
-        productId: req.params.id,
+        productId: req.params.id as string,
         userId,
       },
     });
@@ -78,13 +78,13 @@ router.post("/:id/reset-alert", async (req, res) => {
   }
 });
 
-router.post("/:id/check", async (req, res) => {
+router.post("/:id/check", checkLimiter, async (req, res) => {
   try {
     const userId = (req as any).user.userId as string;
 
     const tracking = await prisma.trackedProduct.findFirst({
       where: {
-        productId: req.params.id,
+        productId: req.params.id as string,
         userId,
         status: "ACTIVE",
       },
@@ -98,7 +98,7 @@ router.post("/:id/check", async (req, res) => {
 
     const listings = await prisma.productListing.findMany({
       where: {
-        productId: req.params.id,
+        productId: req.params.id as string,
       },
     });
 
@@ -108,8 +108,21 @@ router.post("/:id/check", async (req, res) => {
       });
     }
 
+    // checkListingPrice now throws when a price cannot be read, so count successes and failures.
+    let succeeded = 0;
     for (const listing of listings) {
-      await checkListingPrice(listing.id);
+      try {
+        await checkListingPrice(listing.id);
+        succeeded++;
+      } catch {
+        // already logged inside checkListingPrice
+      }
+    }
+
+    if (succeeded === 0) {
+      return res.status(502).json({
+        message: "Could not fetch the latest price right now. Please try again later.",
+      });
     }
 
     return res.json({

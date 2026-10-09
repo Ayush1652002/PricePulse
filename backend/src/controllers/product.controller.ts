@@ -1,9 +1,7 @@
 import { Request, Response } from "express";
 import { z } from "zod";
 import prisma from "../config/prisma.js";
-import EbayProvider from "../providers/ebay.provider.js";
 import { checkTargetPrice } from "../services/alert.service.js";
-import { findMarketplaceAdapter } from "../services/marketplaces/index.js";
 
 const listingSchema = z.object({
   marketplace: z.string().min(1),
@@ -29,50 +27,28 @@ function getUserId(req: Request) {
   return (req as any).user.userId as string;
 }
 
-export async function previewProduct(req: Request, res: Response) {
-  try {
-    const { url } = z.object({ url: z.string().url() }).parse(req.body);
+// Used by every query that returns a tracking to the user.
+const trackingInclude = {
+  product: {
+    include: {
+      listings: {
+        include: { marketplace: true },
+      },
+    },
+  },
+  alert: true,
+} as const;
 
-    const adapter = findMarketplaceAdapter(url);
-    if (!adapter) {
-      return res.status(400).json({
-        message: "Marketplace not supported.",
-      });
-    }
-
-    let productData;
-    try {
-      productData = await adapter.getProduct(url);
-    } catch (scrapeError) {
-      console.warn("Autofetch price failed, falling back to manual entry:", scrapeError);
-      
-      const domain = new URL(url).hostname.toLowerCase();
-      let marketplaceName = "Amazon";
-      if (domain.includes("flipkart")) marketplaceName = "Flipkart";
-      else if (domain.includes("meesho")) marketplaceName = "Meesho";
-      else if (domain.includes("croma")) marketplaceName = "Croma";
-      else if (domain.includes("ebay")) marketplaceName = "eBay";
-
-      productData = {
-        marketplace: marketplaceName,
-        externalId: `url-${Buffer.from(url).toString("base64url").slice(0, 40)}`,
-        title: null,
-        price: null,
-        currency: "INR",
-      };
-    }
-
-    return res.status(200).json(productData);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        message: "Invalid URL provided.",
-      });
-    }
-    return res.status(500).json({
-      message: "Failed to process product URL.",
-    });
-  }
+// Product.title is shared by everyone who tracks the product. The name a user typed is stored
+// on their own tracking (customTitle). The API still answers with product.title so the frontend
+// needs no change: it simply sees the user's own name.
+function withDisplayTitle<T extends { customTitle: string | null; product: { title: string } }>(
+  tracking: T
+): T {
+  return {
+    ...tracking,
+    product: { ...tracking.product, title: tracking.customTitle ?? tracking.product.title },
+  };
 }
 
 export async function createProduct(req: Request, res: Response) {
@@ -80,166 +56,153 @@ export async function createProduct(req: Request, res: Response) {
     const data = createProductSchema.parse(req.body);
     const userId = getUserId(req);
 
-    let productId: string | null = null;
+    // Everything below is ONE transaction (all-or-nothing), so a crash cannot leave half-made rows.
+    const outcome = await prisma.$transaction(
+      async (tx) => {
+        let productId: string | null = null;
+        const prepared: { input: (typeof data.listings)[number]; marketplaceId: string }[] = [];
 
-    for (const input of data.listings) {
-      const marketplace = await prisma.marketplace.upsert({
-        where: { name: input.marketplace },
-        update: {},
-        create: {
-          name: input.marketplace,
-          baseUrl: new URL(input.url).origin,
-        },
-      });
+        for (const input of data.listings) {
+          const marketplace = await tx.marketplace.upsert({
+            where: { name: input.marketplace },
+            update: {},
+            create: {
+              name: input.marketplace,
+              baseUrl: new URL(input.url).origin,
+            },
+          });
 
-      const existingListing = await prisma.productListing.findUnique({
-        where: {
-          marketplaceId_externalId: {
-            marketplaceId: marketplace.id,
-            externalId: input.externalId,
-          },
-        },
-        select: {
-          id: true,
-          productId: true,
-        },
-      });
+          prepared.push({ input, marketplaceId: marketplace.id });
 
-      if (existingListing) {
-        productId = existingListing.productId;
-        break;
-      }
-    }
-
-    const product = productId
-      ? await prisma.product.update({
-          where: { id: productId },
-          data: { title: data.title },
-        })
-      : await prisma.product.create({
-          data: { title: data.title },
-        });
-
-    for (const input of data.listings) {
-      const marketplace = await prisma.marketplace.upsert({
-        where: { name: input.marketplace },
-        update: {},
-        create: {
-          name: input.marketplace,
-          baseUrl: new URL(input.url).origin,
-        },
-      });
-
-      const existingListing = await prisma.productListing.findUnique({
-        where: {
-          marketplaceId_externalId: {
-            marketplaceId: marketplace.id,
-            externalId: input.externalId,
-          },
-        },
-      });
-
-      if (existingListing) {
-        await prisma.productListing.update({
-          where: { id: existingListing.id },
-          data: {
-            url: input.url,
-            currentPrice: input.currentPrice,
-            currency: input.currency,
-          },
-        });
-        continue;
-      }
-
-      const listing = await prisma.productListing.create({
-        data: {
-          externalId: input.externalId,
-          url: input.url,
-          currentPrice: input.currentPrice,
-          lowestObservedPrice: input.currentPrice,
-          currency: input.currency,
-          productId: product.id,
-          marketplaceId: marketplace.id,
-        },
-      });
-
-      await prisma.priceHistory.create({
-        data: {
-          listingId: listing.id,
-          price: input.currentPrice,
-          currency: input.currency,
-        },
-      });
-    }
-
-    const existingTracking = await prisma.trackedProduct.findUnique({
-      where: {
-        userId_productId: {
-          userId,
-          productId: product.id,
-        },
-      },
-    });
-
-    if (existingTracking) {
-      if (existingTracking.status === "STOPPED") {
-        const tracking = await prisma.trackedProduct.update({
-          where: { id: existingTracking.id },
-          data: {
-            status: "ACTIVE",
-            targetPrice: data.targetPrice,
-          },
-          include: {
-            product: {
-              include: {
-                listings: {
-                  include: { marketplace: true },
+          if (!productId) {
+            const existingListing = await tx.productListing.findUnique({
+              where: {
+                marketplaceId_externalId: {
+                  marketplaceId: marketplace.id,
+                  externalId: input.externalId,
                 },
               },
+              select: { productId: true },
+            });
+
+            if (existingListing) productId = existingListing.productId;
+          }
+        }
+
+        // If the product already exists, it is SHARED with other users. Its title is never
+        // overwritten from user input. (The user's own name goes into customTitle below.)
+        const product = productId
+          ? await tx.product.findUniqueOrThrow({ where: { id: productId } })
+          : await tx.product.create({ data: { title: data.title } });
+
+        for (const { input, marketplaceId } of prepared) {
+          const existingListing = await tx.productListing.findUnique({
+            where: {
+              marketplaceId_externalId: {
+                marketplaceId,
+                externalId: input.externalId,
+              },
             },
-            alert: true,
+            select: { id: true },
+          });
+
+          // An existing listing is shared too. Its url / price / currency are only changed by the
+          // price checker, never by what a user sends.
+          if (existingListing) continue;
+
+          const listing = await tx.productListing.create({
+            data: {
+              externalId: input.externalId,
+              url: input.url,
+              currentPrice: input.currentPrice,
+              lowestObservedPrice: input.currentPrice,
+              currency: input.currency,
+              productId: product.id,
+              marketplaceId,
+            },
+          });
+
+          await tx.priceHistory.create({
+            data: {
+              listingId: listing.id,
+              price: input.currentPrice,
+              currency: input.currency,
+            },
+          });
+        }
+
+        const existingTracking = await tx.trackedProduct.findUnique({
+          where: {
+            userId_productId: {
+              userId,
+              productId: product.id,
+            },
           },
         });
 
-        return res.status(200).json({
-          message: "Product tracking restarted.",
-          tracking,
-        });
-      }
+        if (existingTracking) {
+          if (existingTracking.status !== "STOPPED") {
+            return { kind: "conflict" as const };
+          }
 
+          const tracking = await tx.trackedProduct.update({
+            where: { id: existingTracking.id },
+            data: {
+              status: "ACTIVE",
+              targetPrice: data.targetPrice,
+              customTitle: data.title,
+            },
+            include: trackingInclude,
+          });
+
+          return { kind: "restarted" as const, tracking };
+        }
+
+        const tracking = await tx.trackedProduct.create({
+          data: {
+            userId,
+            productId: product.id,
+            customTitle: data.title,
+            targetPrice: data.targetPrice,
+            status: "ACTIVE",
+          },
+          include: trackingInclude,
+        });
+
+        return { kind: "created" as const, tracking };
+      },
+      { maxWait: 10_000, timeout: 20_000 }
+    );
+
+    if (outcome.kind === "conflict") {
       return res.status(409).json({
         message: "You are already tracking this product.",
       });
     }
 
-    const tracking = await prisma.trackedProduct.create({
-      data: {
-        userId,
-        productId: product.id,
-        targetPrice: data.targetPrice,
-        status: "ACTIVE",
-      },
-      include: {
-        product: {
-          include: {
-            listings: {
-              include: { marketplace: true },
-            },
-          },
-        },
-        alert: true,
-      },
-    });
+    if (outcome.kind === "restarted") {
+      return res.status(200).json({
+        message: "Product tracking restarted.",
+        tracking: withDisplayTitle(outcome.tracking),
+      });
+    }
 
     return res.status(201).json({
       message: "Product added and tracking started.",
-      tracking,
+      tracking: withDisplayTitle(outcome.tracking),
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         message: "Invalid product data.",
         errors: error.issues,
+      });
+    }
+
+    // P2002 = "this row already exists" (two identical requests arrived at the same time).
+    if ((error as { code?: string })?.code === "P2002") {
+      return res.status(409).json({
+        message: "You are already tracking this product.",
       });
     }
 
@@ -258,20 +221,11 @@ export async function getProducts(req: Request, res: Response) {
       where: {
         userId,
       },
-      include: {
-        product: {
-          include: {
-            listings: {
-              include: { marketplace: true },
-            },
-          },
-        },
-        alert: true,
-      },
+      include: trackingInclude,
       orderBy: { createdAt: "desc" },
     });
 
-    return res.status(200).json({ products });
+    return res.status(200).json({ products: products.map(withDisplayTitle) });
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -290,16 +244,7 @@ export async function getProduct(req: Request, res: Response) {
         userId,
         productId: id,
       },
-      include: {
-        product: {
-          include: {
-            listings: {
-              include: { marketplace: true },
-            },
-          },
-        },
-        alert: true,
-      },
+      include: trackingInclude,
     });
 
     if (!tracking) {
@@ -308,7 +253,7 @@ export async function getProduct(req: Request, res: Response) {
       });
     }
 
-    return res.status(200).json({ tracking });
+    return res.status(200).json({ tracking: withDisplayTitle(tracking) });
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -336,16 +281,11 @@ export async function updateTracking(req: Request, res: Response) {
       });
     }
 
-    if (data.title !== undefined) {
-      await prisma.product.update({
-        where: { id: tracking.productId },
-        data: { title: data.title },
-      });
-    }
-
+    // The new name is saved on THIS user's tracking only (never on the shared Product).
     const updatedTracking = await prisma.trackedProduct.update({
       where: { id: tracking.id },
       data: {
+        ...(data.title !== undefined ? { customTitle: data.title } : {}),
         ...(data.targetPrice !== undefined
           ? { targetPrice: data.targetPrice }
           : {}),
@@ -353,21 +293,12 @@ export async function updateTracking(req: Request, res: Response) {
           ? { status: data.status }
           : {}),
       },
-      include: {
-        product: {
-          include: {
-            listings: {
-              include: { marketplace: true },
-            },
-          },
-        },
-        alert: true,
-      },
+      include: trackingInclude,
     });
 
     return res.status(200).json({
       message: "Tracking updated successfully.",
-      tracking: updatedTracking,
+      tracking: withDisplayTitle(updatedTracking),
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -479,40 +410,6 @@ export async function deleteTracking(req: Request, res: Response) {
   }
 }
 
-export async function stopTracking(req: Request, res: Response) {
-  try {
-    const userId = getUserId(req);
-    const id = req.params.id as string;
-
-    const tracking = await prisma.trackedProduct.findFirst({
-      where: {
-        userId,
-        productId: id,
-      },
-    });
-
-    if (!tracking) {
-      return res.status(404).json({
-        message: "Tracking record not found.",
-      });
-    }
-
-    await prisma.trackedProduct.update({
-      where: { id: tracking.id },
-      data: { status: "STOPPED" },
-    });
-
-    return res.status(200).json({
-      message: "Product tracking stopped.",
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: "Internal server error.",
-    });
-  }
-}
-
 export async function getPriceHistory(req: Request, res: Response) {
   try {
     const userId = getUserId(req);
@@ -573,28 +470,6 @@ export async function getPriceHistory(req: Request, res: Response) {
   }
 }
 
-export async function searchProducts(req: Request, res: Response) {
-  try {
-    const query = req.query.q;
-
-    if (typeof query !== "string" || !query.trim()) {
-      return res.status(400).json({
-        message: "Search query is required.",
-      });
-    }
-
-    const ebayProvider = new EbayProvider();
-    const products = await ebayProvider.searchProducts(query);
-
-    return res.status(200).json({ products });
-  } catch (error) {
-    console.error(error);
-    return res.status(502).json({
-      message: "Marketplace provider unavailable.",
-    });
-  }
-}
-
 export async function updatePrice(req: Request, res: Response) {
   try {
     const userId = getUserId(req);
@@ -618,6 +493,20 @@ export async function updatePrice(req: Request, res: Response) {
     if (!tracking) {
       return res.status(404).json({
         message: "Product is not actively tracked.",
+      });
+    }
+
+    // The listing (and its price) is shared with everyone tracking this product, so a manual
+    // price is only allowed while nobody else tracks it. Otherwise one user could trigger
+    // fake price-drop alerts for other users.
+    const otherTrackers = await prisma.trackedProduct.count({
+      where: { productId: id, userId: { not: userId } },
+    });
+
+    if (otherTrackers > 0) {
+      return res.status(403).json({
+        message:
+          "This product is also tracked by other users, so its price is updated automatically and cannot be edited manually.",
       });
     }
 

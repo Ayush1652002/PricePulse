@@ -1,7 +1,10 @@
 import "dotenv/config";
+import { assertRequiredEnv } from "./config/env.js";
 import app from "./app.js";
 import { startPriceWorker } from "./workers/price.worker.js";
 import { startPriceScheduler } from "./workers/price.scheduler.js";
+
+assertRequiredEnv();
 
 const PORT = process.env.PORT || 3000;
 
