@@ -56,15 +56,26 @@ const extraOrigins = (process.env.CLIENT_URL || "")
   .filter(Boolean);
 
 app.use(
-   cors({
-    origin: [
-      "http://localhost:5174",
-      "https://price-pulse-silk.vercel.app",
-      ...extraOrigins,
-    ],
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      const isAllowed =
+        origin === "http://localhost:5174" ||
+        origin === "https://price-pulse-silk.vercel.app" ||
+        /^https:\/\/price-pulse.*\.vercel\.app$/.test(origin) ||
+        extraOrigins.includes(origin);
+
+      if (isAllowed) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   })
 );
+
 app.use(express.json());
 app.use(cookieParser());
 
