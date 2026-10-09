@@ -254,11 +254,14 @@ export async function fetchHtml(url: string) {
       method: "GET",
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept":
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
-        "Cache-Control": "no-cache",
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-IN,en;q=0.9",
+        "Referer": "https://www.google.com/",
+        "Device-Memory": "8",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
       },
       signal: AbortSignal.timeout(DIRECT_FETCH_TIMEOUT_MS),
     });
