@@ -25,6 +25,10 @@ jobs:
     env:
       DATABASE_URL: postgresql://pricepulse:pricepulse@localhost:5432/pricepulse_test
       TEST_DATABASE_URL: postgresql://pricepulse:pricepulse@localhost:5432/pricepulse_test
+      GOOGLE_CLIENT_ID: "dummy-client-id-for-ci-testing"
+      VAPID_PUBLIC_KEY: "dummy-public-key"
+      VAPID_PRIVATE_KEY: "dummy-private-key"
+      VAPID_SUBJECT: "mailto:test@example.com"
     defaults:
       run:
         working-directory: backend
