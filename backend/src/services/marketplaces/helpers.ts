@@ -34,7 +34,14 @@ export async function resolveShortUrl(url: string): Promise<string> {
       signal: AbortSignal.timeout(SHORT_URL_TIMEOUT_MS),
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept":
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-IN,en;q=0.9",
+        "Referer": "https://www.google.com/",
+        "Device-Memory": "8",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
       },
     });
     finalUrl = response.url || url;
@@ -138,6 +145,29 @@ export function parsePrice($: cheerio.CheerioAPI): number | null {
     if (match) {
       const val = Number(match[1]);
       if (val >= 1 && val < 10_000_000) return val;
+    }
+  }
+
+  // 2.5 Flipkart Primary UI Selectors (Must run BEFORE JSON-LD to get the actual deal/coupon selling price)
+  const flipkartSelectors = [
+    ".Nx9bqj._4b5DiR",
+    ".Nx9bqj",
+    "div[class*='v1zwn'][class*='1psv1zeb9']",
+    "div[class*='v1zwn']",
+    "._30jeq3._16JgWd",
+    "._30jeq3",
+    "._16JgWd",
+  ];
+
+  for (const selector of flipkartSelectors) {
+    const el = $clean(selector).first();
+    if (el.length) {
+      const text = el.text().trim();
+      const match = text.replace(/,/g, "").match(/(?:₹|Rs\.?|INR)?\s*(\d+(?:\.\d{1,2})?)/i);
+      if (match && match[1]) {
+        const val = Number(match[1]);
+        if (val >= 1 && val < 10_000_000) return val;
+      }
     }
   }
 

@@ -223,7 +223,6 @@ export async function loginUser(req: Request, res: Response) {
   }
 }
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 export async function googleLogin(req: Request, res: Response) {
   try {
@@ -233,9 +232,17 @@ export async function googleLogin(req: Request, res: Response) {
       return res.status(400).json({ message: "Google credential missing." });
     }
 
-    const ticket = await googleClient.verifyIdToken({
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      console.error("GOOGLE_CLIENT_ID is not set in process.env");
+      return res.status(500).json({ message: "Google Auth is not configured on the server." });
+    }
+
+    const client = new OAuth2Client(clientId);
+
+    const ticket = await client.verifyIdToken({
       idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: clientId,
     });
 
     const payload = ticket.getPayload();
@@ -244,8 +251,6 @@ export async function googleLogin(req: Request, res: Response) {
       return res.status(401).json({ message: "Invalid Google account." });
     }
 
-    // Only trust the email if Google says it is verified. Otherwise someone could sign in
-    // with a Google account that merely *claims* another person's email address.
     if (payload.email_verified !== true) {
       return res.status(401).json({ message: "Your Google email is not verified." });
     }
@@ -285,7 +290,7 @@ export async function googleLogin(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error("Google verify error:", error);
     return res.status(401).json({ message: "Google login failed." });
   }
 }
